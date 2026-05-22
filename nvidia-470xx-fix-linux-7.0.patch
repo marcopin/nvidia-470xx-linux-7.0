@@ -1,0 +1,62 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: haxllo <mshabeeburrahman786@gmail.com>
+Date: Thu, 22 May 2026 00:00:00 +0000
+Subject: [PATCH] Tentative fix for NVIDIA 470.256.02 driver for Linux 7.0
+
+Kernel 7.0 removed EXTRA_CFLAGS support from the build system (scripts/
+Makefile.build no longer references it). Only ccflags-y is accepted now.
+
+This patch:
+1. Replaces EXTRA_CFLAGS with ccflags-y throughout the Kbuild files so
+   include paths (-I$(src)/common/inc etc.) and defines are actually
+   passed to the compiler.
+2. Updates NV_CONFTEST_CFLAGS to reference ccflags-y instead of EXTRA_CFLAGS.
+
+Without this patch, the build fails immediately because the compiler
+cannot find nvmisc.h and other headers from common/inc/.
+---
+ kernel/Kbuild | 18 ++++++++--------
+ 1 file changed, 9 insertions(+), 9 deletions(-)
+
+diff --git a/kernel/Kbuild b/kernel/Kbuild
+index 1111111..2222222 100644
+--- a/kernel/Kbuild
++++ b/kernel/Kbuild
+@@ -60,16 +60,16 @@ NV_UNDEF_BEHAVIOR_SANITIZER ?=
+
+ #
+-# Define CFLAGS that apply to all the NVIDIA kernel modules. EXTRA_CFLAGS
+-# is deprecated since 2.6.24 in favor of ccflags-y, but we need to support
+-# older kernels which do not have ccflags-y. Newer kernels append
+-# $(EXTRA_CFLAGS) to ccflags-y for compatibility.
++# Define CFLAGS that apply to all the NVIDIA kernel modules.
++# Kernel 7.0+ removed EXTRA_CFLAGS entirely; use ccflags-y directly.
+ #
+
+-EXTRA_CFLAGS += -I$(src)/common/inc
+-EXTRA_CFLAGS += -I$(src)
+-EXTRA_CFLAGS += -Wall -MD $(DEFINES) $(INCLUDES) -Wno-cast-qual -Wno-error -Wno-format-extra-args
+-EXTRA_CFLAGS += -D__KERNEL__ -DMODULE -DNVRM -DNV_VERSION_STRING=\"470.256.02\" -Wno-unused-function -Wuninitialized -fno-strict-aliasing -mno-red-zone -mcmodel=kernel -DNV_UVM_ENABLE
+-EXTRA_CFLAGS += $(call cc-option,-Werror=undef,)
+-EXTRA_CFLAGS += -DNV_SPECTRE_V2=$(NV_SPECTRE_V2)
+-EXTRA_CFLAGS += -DNV_KERNEL_INTERFACE_LAYER
++ccflags-y += -I$(src)/common/inc
++ccflags-y += -I$(src)
++ccflags-y += -Wall -MD $(DEFINES) $(INCLUDES) -Wno-cast-qual -Wno-error -Wno-format-extra-args
++ccflags-y += -D__KERNEL__ -DMODULE -DNVRM -DNV_VERSION_STRING=\"470.256.02\" -Wno-unused-function -Wuninitialized -fno-strict-aliasing -mno-red-zone -mcmodel=kernel -DNV_UVM_ENABLE
++ccflags-y += $(call cc-option,-Werror=undef,)
++ccflags-y += -DNV_SPECTRE_V2=$(NV_SPECTRE_V2)
++ccflags-y += -DNV_KERNEL_INTERFACE_LAYER
+
+ #
+ # Detect SUI UV systems and apply system-specific optimizations.
+@@ -79,7 +79,7 @@ ifneq ($(wildcard /proc/sgi_uv),)
+- EXTRA_CFLAGS += -DNV_CONFIG_X86_UV
++ ccflags-y += -DNV_CONFIG_X86_UV
+ endif
+
+@@ -110,1 +110,1 @@ ifneq ($(wildcard /proc/sgi_uv),)
+-NV_CONFTEST_CFLAGS = $(NV_CFLAGS_FROM_CONFTEST) $(EXTRA_CFLAGS) -fno-pie
++NV_CONFTEST_CFLAGS = $(NV_CFLAGS_FROM_CONFTEST) $(ccflags-y) -fno-pie
+--
+2.49.0
