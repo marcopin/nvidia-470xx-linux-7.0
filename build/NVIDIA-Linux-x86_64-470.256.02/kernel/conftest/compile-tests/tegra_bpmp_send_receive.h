@@ -1,0 +1,1 @@
+#define NV_TEGRA_BPMP_SEND_RECEIVE

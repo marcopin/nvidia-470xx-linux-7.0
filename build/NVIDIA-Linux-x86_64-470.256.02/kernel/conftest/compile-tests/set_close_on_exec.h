@@ -1,0 +1,1 @@
+#define NV_SET_CLOSE_ON_EXEC_PRESENT
