@@ -1,168 +1,94 @@
-# NVIDIA 470.256.02 on Linux Kernel 7.0 (Arch Linux)
+# nvidia-470xx-linux-7.0
 
-Patches and instructions to build & install the **last Kepler-supporting NVIDIA driver** (470.256.02) on **Linux kernel 7.0.9** (and likely later 7.x kernels).
+[![License: GPL v2](https://img.shields.io/badge/License-GPL%20v2-blue?style=flat-square)](LICENSE)
+[![Kernel](https://img.shields.io/badge/Kernel-7.0.x-blue?style=flat-square)](#)
+[![Driver](https://img.shields.io/badge/Driver-470.256.02-76b900?style=flat-square)](#)
 
-**GPU**: GeForce GT 720 (GK208) — but any Kepler GPU (GT 600/700 series) should work.
+> Build and install NVIDIA 470.256.02 (the final Kepler-supporting driver) on Linux kernel 7.0 — for any distribution.
+
+GeForce GT/GTX 6xx/7xx (Kepler) owners have been stuck since NVIDIA dropped support after driver 470. This patch gets that driver compiling and running on kernel 7.0.
+
+## Features
+
+- All 5 kernel modules compile with zero errors: `nvidia`, `nvidia-uvm`, `nvidia-modeset`, `nvidia-drm`, `nvidia-peermem`
+- Automatic conftest correction — no manual macro overrides needed
+- Xorg, OpenGL, CUDA 11.4, Vulkan, VDPAU, NVENC/NVDEC all functional
+- Single unified patch, works on any distro
 
 ## Prerequisites
 
-- Arch Linux (or any distro with kernel 7.0+)
-- `linux-headers` installed matching your running kernel
-- Base-devel group (`gcc`, `make`, etc.)
-- Xorg server and libglvnd
+- Linux kernel 7.0+
+- Kernel headers installed matching your running kernel
+- GCC, make, and standard build tools
+- Xorg server and `libglvnd` (for OpenGL/GLX)
 
-## Quick Start (Manual Build)
-
-### 1. Get the driver
+## Quick start
 
 ```bash
+# 1. Download and extract the NVIDIA driver
 wget https://us.download.nvidia.com/XFree86/Linux-x86_64/470.256.02/NVIDIA-Linux-x86_64-470.256.02.run
 sh NVIDIA-Linux-x86_64-470.256.02.run --extract-only
 cd NVIDIA-Linux-x86_64-470.256.02/kernel
-```
 
-### 2. Apply the patch
-
-```bash
+# 2. Apply the patch
 patch -p1 -i /path/to/nvidia-470xx-fix-linux-7.0.patch
-```
 
-### 3. Build
+# 3. Build kernel modules
+make modules
 
-The patch includes an automatic conftest fix (`generate_version_overrides` command) that reads your kernel version and corrects any wrong results caused by `static_assert` in kernel 7.0+ headers. No manual intervention needed.
-
-### 4. Install kernel modules
-
-```bash
-SYSSRC=/usr/lib/modules/$(uname -r)/build make modules
-```
-
-### 5. Install kernel modules
-
-```bash
+# 4. Install modules
 sudo make modules_install
 sudo depmod -a
+
+# 5. Install userspace libraries
+# See "Full installation" below
 ```
 
-### 6. Install userspace libraries
+> [!TIP]
+> The patch includes `generate_version_overrides` which reads `LINUX_VERSION_CODE` from your kernel headers and auto-corrects macro detection. No manual overrides needed on kernel 7.0.
+
+## Full installation
+
+### Userspace libraries
+
+The extracted driver directory (`NVIDIA-Linux-x86_64-470.256.02/`) contains all the `.so` libraries, Xorg driver, Vulkan ICD, OpenCL, and binaries. The [PKGBUILD](PKGBUILD) lists every file with its install location — reference it regardless of your distro.
+
+**Key files to install:**
+
+| Category | Files |
+|---|---|
+| CUDA | `libcuda.so.470.256.02`, `libnvcuvid.so.470.256.02` |
+| OpenGL/GLX | `libGLX_nvidia.so.470.256.02`, `libnvidia-glcore.so.470.256.02`, `libnvidia-eglcore.so.470.256.02` |
+| GLES | `libGLESv1_CM_nvidia.so.470.256.02`, `libGLESv2_nvidia.so.470.256.02` |
+| Vulkan | `libnvidia-glvkspirv.so.470.256.02`, `nvidia_icd.json` |
+| VDPAU | `libvdpau_nvidia.so.470.256.02 → /usr/lib/vdpau/` |
+| NVENC/NVDEC | `libnvidia-encode.so.470.256.02`, `libnvidia-fbc.so.470.256.02` |
+| Xorg driver | `nvidia_drv.so → /usr/lib/xorg/modules/drivers/`, `libglxserver_nvidia.so.470.256.02` |
+| nvidia-smi | `nvidia-smi`, `nvidia-modprobe`, `nvidia-xconfig`, `nvidia-persistenced` |
+| OpenCL | `libnvidia-opencl.so.470.256.02`, `nvidia.icd` |
+
+### Post-install config
 
 ```bash
-cd ../   # back to NVIDIA-Linux-x86_64-470.256.02/
-```
-
-Copy the following to `/usr/lib/` (see the PKGBUILD in this repo for the complete list):
-
-| Library | Purpose |
-|---------|---------|
-| `libcuda.so.470.256.02` | CUDA driver API |
-| `libnvidia-opencl.so.470.256.02` | OpenCL |
-| `libnvidia-compiler.so.470.256.02` | OpenCL compiler |
-| `libGLX_nvidia.so.470.256.02` | GLX |
-| `libEGL_nvidia.so.470.256.02` | EGL |
-| `libGLESv1_CM_nvidia.so.470.256.02` | GLESv1 |
-| `libGLESv2_nvidia.so.470.256.02` | GLESv2 |
-| `libnvidia-glcore.so.470.256.02` | OpenGL core |
-| `libnvidia-eglcore.so.470.256.02` | EGL core |
-| `libnvidia-glsi.so.470.256.02` | GL system interface |
-| `libnvidia-tls.so.470.256.02` | TLS |
-| `libnvidia-ml.so.470.256.02` | Management library |
-| `libnvidia-cfg.so.470.256.02` | Config library |
-| `libnvidia-ptxjitcompiler.so.470.256.02` | PTX JIT |
-| `libnvidia-encode.so.470.256.02` | NVENC |
-| `libnvidia-ifr.so.470.256.02` | IFROn dows |
-| `libnvidia-fbc.so.470.256.02` | Framebuffer capture |
-| `libnvcuvid.so.470.256.02` | CUDA video decoder |
-| `libnvidia-allocator.so.470.256.02` | Allocator |
-| `libnvidia-glvkspirv.so.470.256.02` | Vulkan SPIR-V |
-| `libnvidia-vulkan-producer.so.470.256.02` | Vulkan producer |
-| `libnvidia-ngx.so.470.256.02` | NGX |
-| `libnvoptix.so.470.256.02` | OptiX |
-| `libnvidia-rtcore.so.470.256.02` | Ray tracing core |
-| `libnvidia-cbl.so.470.256.02` | CBL |
-| `libnvidia-opticalflow.so.470.256.02` | Optical flow |
-| `libvdpau_nvidia.so.470.256.02` | VDPAU (→ `/usr/lib/vdpau/`) |
-
-**Xorg driver:**
-
-```bash
-sudo install -D nvidia_drv.so /usr/lib/xorg/modules/drivers/nvidia_drv.so
-sudo install -D libglxserver_nvidia.so.470.256.02 /usr/lib/nvidia/xorg/libglxserver_nvidia.so.470.256.02
-sudo ln -s libglxserver_nvidia.so.470.256.02 /usr/lib/nvidia/xorg/libglxserver_nvidia.so.1
-sudo ln -s libglxserver_nvidia.so.470.256.02 /usr/lib/nvidia/xorg/libglxserver_nvidia.so
-```
-
-**Create soname symlinks:**
-
-```bash
-find /usr/lib -type f -name '*.so*' -not -path '*xorg/*' -print0 | while IFS= read -d $'\0' _lib; do
-    _soname=$(dirname "${_lib}")/$(readelf -d "${_lib}" | grep -Po 'SONAME.*: \[\K[^]]*' || true)
-    [ -z "$_soname" ] && continue
-    _base=$(echo "$_soname" | sed -r 's/(.*)\.so.*/\1.so/')
-    [ -e "$_soname" ] || ln -s "$(basename "${_lib}")" "$_soname"
-    [ -e "$_base" ] || ln -s "$(basename "$_soname")" "$_base"
-done
-```
-
-**Binaries:**
-
-```bash
-sudo install -D nvidia-smi /usr/bin/nvidia-smi
-sudo install -D nvidia-modprobe /usr/bin/nvidia-modprobe
-sudo install -D nvidia-xconfig /usr/bin/nvidia-xconfig
-sudo install -D nvidia-debugdump /usr/bin/nvidia-debugdump
-sudo install -D nvidia-bug-report.sh /usr/bin/nvidia-bug-report.sh
-sudo install -D nvidia-cuda-mps-server /usr/bin/nvidia-cuda-mps-server
-sudo install -D nvidia-cuda-mps-control /usr/bin/nvidia-cuda-mps-control
-sudo install -D nvidia-persistenced /usr/bin/nvidia-persistenced
-```
-
-**Vulkan ICD:**
-
-```bash
-sudo install -Dm644 nvidia_icd.json /usr/share/vulkan/icd.d/nvidia_icd.json
-sudo install -Dm644 nvidia_layers.json /usr/share/vulkan/implicit_layer.d/nvidia_layers.json
-```
-
-**OpenCL ICD:**
-
-```bash
-sudo install -Dm644 nvidia.icd /etc/OpenCL/vendors/nvidia.icd
-```
-
-**GLVND EGL vendor:**
-
-```bash
-sudo install -Dm644 10_nvidia.json /usr/share/glvnd/egl_vendor.d/10_nvidia.json
-```
-
-### 7. Post-install configuration
-
-**Blacklist nouveau:**
-
-```bash
+# Blacklist nouveau
 echo "blacklist nouveau" | sudo tee /usr/lib/modprobe.d/nvidia-470xx.conf
-echo "alias nouveau off" | sudo tee -a /usr/lib/modprobe.d/nvidia-470xx.conf
-```
 
-**Autoload modules:**
-
-```bash
+# Autoload modules at boot
 printf "nvidia-uvm\nnvidia-modeset\nnvidia-drm\n" | sudo tee /usr/lib/modules-load.d/nvidia-470xx.conf
-```
 
-**Xorg config** (`/etc/X11/xorg.conf.d/20-nvidia.conf`):
-
-```
+# Xorg config — adjust BusID to match your GPU
+cat > /etc/X11/xorg.conf.d/20-nvidia.conf << 'EOF'
 Section "Device"
     Identifier  "NVIDIA"
     Driver      "nvidia"
-    BusID       "PCI:41:0:0"   # Change to match your GPU's lspci address
+    BusID       "PCI:41:0:0"
 EndSection
+EOF
 ```
 
-Find your BusID: `lspci | grep VGA` → `29:00.0` means bus 0x29 = 41 decimal, so `PCI:41:0:0`.
+Find your BusID: `lspci | grep VGA` → `29:00.0` means domain 0, bus 0x29 (= 41 decimal), so `PCI:41:0:0`.
 
-**Reboot** and verify:
+### Verify
 
 ```bash
 nvidia-smi
@@ -170,68 +96,56 @@ lsmod | grep nvidia
 glxinfo | grep "OpenGL vendor"
 ```
 
+## How it works
+
+NVIDIA's driver build uses `conftest.sh` to probe the kernel API by compiling small C programs. On kernel 7.0, `static_assert` in kernel headers causes these probes to fail silently, producing wrong `#undef` results. The patch addresses four categories of breakage:
+
+1. **Conftest auto-correction** — `generate_version_overrides` reads `LINUX_VERSION_CODE` and overrides 19+ wrongly detected macros
+2. **Build system** — `EXTRA_CFLAGS` removed in kernel 7.0; replaced with `ccflags-y`
+3. **GPL-only symbols** — `__vma_start_write`, `follow_pfnmap_start/end`, `set_close_on_exec` went GPL; bypassed with direct equivalents
+4. **Removed APIs** — `del_timer_sync` → `timer_delete_sync`, `in_irq` → `in_hardirq`, `follow_pfn` → manual page table walk
+
+All source changes are in a single unified patch against the driver's `kernel/` directory.
+
 ## Troubleshooting
 
-### conftest.sh fails
+### conftest.sh auto-correction not working
 
-The patch includes an automatic fix — `generate_version_overrides` in conftest.sh reads `LINUX_VERSION_CODE` and corrects known-wrong results on kernel 7.0+. If you see unexpected build errors, check if `conftest/functions.h` has `#undef` for APIs that should exist (e.g., `NV_FILE_HAS_INODE`). On kernel 7.0+, the fix is automatic.
+Check `conftest/functions.h` after building. If macros like `NV_FILE_HAS_INODE` show `#undef` on kernel 7.0, the version detection failed. Verify your kernel headers have `include/generated/uapi/linux/version.h`.
 
-### GPL-only symbol errors on module load
+### Module load fails: unknown symbol
 
-If `insmod` fails with "Unknown symbol" for GPL-only symbols:
+The patch handles all known GPL-only symbol issues. If you see new ones, check `dmesg` for the symbol name — it may need a similar workaround.
 
-- `__vma_start_write` — fixed by calling `vma_flags_set_word`/`vma_flags_clear_word` directly (we already hold the mmap lock)
-- `follow_pfnmap_start`/`follow_pfnmap_end` — replaced with manual x86 page table walk
-- `set_close_on_exec` — use `__set_bit` on the fdtable's `close_on_exec` bitmap directly
+### picom compositor freezing
 
-### del_timer_sync not found
+On Kepler GPUs, picom's GLX backend with `corner-radius` can freeze the screen. Use xrender instead:
 
-Kernel 7.0 removed `del_timer_sync`. Use `timer_delete_sync` instead. Both `nv.c` and `nvidia-modeset-linux.c` need this fix.
-
-### picom freezes with GLX backend
-
-The GLX backend with rounded corners (`corner-radius`) can cause screen freezes on older Kepler GPUs. Switch to the `xrender` backend and disable vsync in picom (let the NVIDIA driver handle vsync).
-
-Recommended picom config:
 ```
 backend = "xrender";
 vsync = false;
 ```
 
-### Module autoload fails
+### Module autoload
 
-If modules don't load at boot, ensure:
-1. `/usr/lib/modules-load.d/nvidia-470xx.conf` exists with module names
-2. `nvidia-uvm` is listed first (it depends on `nvidia`, which autoloads)
-3. `depmod -a` was run after installing the modules
+Ensure `depmod -a` was run after `make modules_install` and that `/usr/lib/modules-load.d/nvidia-470xx.conf` lists the module names.
 
-## File Reference
+## Patch index
 
-| File | Purpose |
-|------|---------|
-| `nvidia-470xx-fix-linux-7.0.patch` | Unified source patch for kernel 7.0 compatibility |
-| `PKGBUILD` | AUR-style PKGBUILD for building from source |
-| `PROGRESS.md` | Build progress and status documentation |
+| File | Patch |
+|---|---|
+| `nvidia-470xx-fix-linux-7.0.patch` | Unified patch (9 files, 404 lines) for kernel 7.0 |
+| `nvidia-470xx-fix-linux-6.13.patch` through `6.19-part2.patch` | Patches for earlier kernels |
+| `nvidia-470xx-fix-gcc-15.patch` | Fix for GCC 15 compatibility |
+| `0001-0003-conftest-fix.patches` | Conftest cross-distribution fixes |
+| `PKGBUILD` | AUR packaging (update `sha512sums` before use) |
 
-## Other Kernel Versions
+## Changelog
 
-This repo also contains patches for other kernel versions in case you need them:
-- `kernel-6.10.patch` through `kernel-6.19-part2.patch`
-- `nvidia-470xx-fix-linux-6.13.patch` through `nvidia-470xx-fix-linux-6.19-part2.patch`
-- `nvidia-470xx-fix-gcc-15.patch`
-- `0001-0003-conftest-fix patches`
-
-## How It Works
-
-The NVIDIA driver uses `conftest.sh` at build time to probe the kernel API and generate the correct `#define`/`#undef` macros in `conftest/functions.h` and `conftest/types.h`. On kernel 7.0:
-
-1. **Conftest breaks**: `static_assert` in modern kernel headers causes compile tests to fail, producing wrong `#undef` results for APIs that still exist
-2. **EXTRA_CFLAGS removed**: Kernel build system no longer supports `EXTRA_CFLAGS`; must use `ccflags-y`
-3. **GPL symbol protection**: Several symbols went from `EXPORT_SYMBOL` to `EXPORT_SYMBOL_GPL`, requiring workarounds
-4. **API removals**: `del_timer_sync`, `in_irq`, `follow_pfn`, `unsafe_follow_pfn`, and several DMA/PCI APIs were removed
-
-The unified patch handles all of these issues, and the manual conftest override table (above) corrects the remaining detection failures.
+See [PROGRESS.md](PROGRESS.md) for the full build log and change history.
 
 ## License
 
-NVIDIA driver is proprietary software. This repo contains only patch files and documentation.
+The patches and documentation in this repository are licensed under [GNU General Public License v2](LICENSE).
+
+The NVIDIA driver itself is proprietary software — this repository contains only the modifications needed to make it compile on kernel 7.0.
