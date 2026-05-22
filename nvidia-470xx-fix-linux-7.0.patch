@@ -1,30 +1,5 @@
-Unified patch for NVIDIA 470.256.02 driver with Linux kernel 7.0 compatibility.
-
-All changes against the original NVIDIA 470.256.02 source (from the official
-.run installer). Apply with:  patch -p1 -d /path/to/kernel
-
-Covers:
-  - Kbuild:               EXTRA_CFLAGS -> ccflags-y (removed in kernel 7.0)
-  - conftest.sh:          8-arg acpi_walk_namespace test; generate_version_overrides
-                          command that auto-corrects conftest results on kernel 7.0
-                          (static_assert in kernel headers breaks compile tests)
-  - common/inc/nv-time.h: in_irq -> in_hardirq (>= 5.11)
-  - common/inc/nv-linux.h: acpi_walk_namespace 8-arg variant; dma_is_direct
-                          fallback for 7.0; f_inode fallback; set_close_on_exec
-                          signature change for 7.0
-  - common/inc/nv-mm.h:   bypass vm_flags_set/clear via vma_flags_set_word/
-                          vma_flags_clear_word (7.0+)
-  - nvidia/nv.c:          del_timer_sync -> timer_delete_sync (7.0+)
-  - nvidia/os-mlock.c:    manual page-table walk instead of follow_pfn (7.0+)
-  - nvidia-modeset/...:   del_timer_sync -> timer_delete_sync (7.0+)
-  - nvidia-uvm/uvm_linux.h: wait_on_bit_lock & radix_tree_replace_slot
-                          fallback with proper ifdef guards
-
-Conftest auto-correction (no manual overrides needed on kernel 7.0):
-  - generate_version_overrides reads LINUX_VERSION_CODE from kernel headers
-  - Corrects 19+ macros that compile tests wrongly detect due to static_assert
---- a/Kbuild	2024-05-02 20:46:35.000000000 +0530
-+++ b/Kbuild	2026-05-22 09:10:00.602323034 +0530
+--- /tmp/nvidia-orig-copy/kernel/Kbuild	2024-05-02 20:46:35.000000000 +0530
++++ /tmp/nvidia-test/kernel/Kbuild	2026-05-22 09:55:30.538343221 +0530
 @@ -60,19 +60,17 @@
  
  
@@ -63,7 +38,7 @@ Conftest auto-correction (no manual overrides needed on kernel 7.0):
  
  NV_CONFTEST_COMPILE_TEST_HEADERS := $(obj)/conftest/macros.h
  NV_CONFTEST_COMPILE_TEST_HEADERS += $(obj)/conftest/functions.h
-@@ -157,7 +155,11 @@
+@@ -157,7 +155,13 @@
  NV_CONFTEST_SYMBOL_COMPILE_TESTS ?=
  NV_CONFTEST_TYPE_COMPILE_TESTS ?=
  
@@ -71,13 +46,24 @@ Conftest auto-correction (no manual overrides needed on kernel 7.0):
 +$(obj)/conftest/functions.h: $(addprefix $(obj)/conftest/compile-tests/,$(addsuffix .h,$(NV_CONFTEST_FUNCTION_COMPILE_TESTS)))
 +	@mkdir -p $(obj)/conftest
 +	@cat $^ /dev/null > $@
-+	@$(NV_CONFTEST_CMD) generate_version_overrides >> $@
++	@grep -v '#error' $@ > $@.tmp && mv $@.tmp $@
++	@$(NV_CONFTEST_CMD) generate_version_overrides > $(@D)/overrides.h
++	@cat $(@D)/overrides.h >> $@
 +
  $(eval $(call NV_GENERATE_COMPILE_TEST_HEADER,generic,$(NV_CONFTEST_GENERIC_COMPILE_TESTS)))
  $(eval $(call NV_GENERATE_COMPILE_TEST_HEADER,macros,$(NV_CONFTEST_MACRO_COMPILE_TESTS)))
  $(eval $(call NV_GENERATE_COMPILE_TEST_HEADER,symbols,$(NV_CONFTEST_SYMBOL_COMPILE_TESTS)))
---- a/common/inc/nv-linux.h	2024-05-02 20:46:36.000000000 +0530
-+++ b/common/inc/nv-linux.h	2026-05-22 09:06:10.266788371 +0530
+--- /tmp/nvidia-orig-copy/kernel/common/inc/conftest.h	2024-05-02 20:46:36.000000000 +0530
++++ /tmp/nvidia-test/kernel/common/inc/conftest.h	2026-05-22 09:55:47.155342963 +0530
+@@ -7,5 +7,6 @@
+ #include "conftest/macros.h"
+ #include "conftest/symbols.h"
+ #include "conftest/types.h"
++#include "conftest/overrides.h"
+ 
+ #endif
+--- /tmp/nvidia-orig-copy/kernel/common/inc/nv-linux.h	2024-05-02 20:46:36.000000000 +0530
++++ /tmp/nvidia-test/kernel/common/inc/nv-linux.h	2026-05-22 09:55:22.853243174 +0530
 @@ -335,6 +335,11 @@
          user_function, args...) \
      acpi_walk_namespace(type, start_object, max_depth, \
@@ -126,8 +112,8 @@ Conftest auto-correction (no manual overrides needed on kernel 7.0):
  #elif defined(NV_LINUX_TIME_H_PRESENT) && defined(FD_SET)
      #define NV_SET_CLOSE_ON_EXEC(fd, fdt) FD_SET(fd, fdt->close_on_exec)
  #else
---- a/common/inc/nv-mm.h	2024-05-02 20:46:36.000000000 +0530
-+++ b/common/inc/nv-mm.h	2026-05-22 09:06:10.266923501 +0530
+--- /tmp/nvidia-orig-copy/kernel/common/inc/nv-mm.h	2024-05-02 20:46:36.000000000 +0530
++++ /tmp/nvidia-test/kernel/common/inc/nv-mm.h	2026-05-22 09:55:22.853393874 +0530
 @@ -25,6 +25,8 @@
  
  #include "conftest.h"
@@ -165,8 +151,8 @@ Conftest auto-correction (no manual overrides needed on kernel 7.0):
  #else
  static inline void nv_vm_flags_set(struct vm_area_struct *vma, unsigned long flags)
  {
---- a/common/inc/nv-time.h	2024-05-02 20:46:36.000000000 +0530
-+++ b/common/inc/nv-time.h	2026-05-22 09:06:10.266667061 +0530
+--- /tmp/nvidia-orig-copy/kernel/common/inc/nv-time.h	2024-05-02 20:46:36.000000000 +0530
++++ /tmp/nvidia-test/kernel/common/inc/nv-time.h	2026-05-22 09:55:22.853477034 +0530
 @@ -28,9 +28,16 @@
  #include <linux/delay.h>
  #include <linux/interrupt.h>
@@ -184,8 +170,8 @@ Conftest auto-correction (no manual overrides needed on kernel 7.0):
  #define NV_MAX_ISR_DELAY_US           20000
  #define NV_MAX_ISR_DELAY_MS           (NV_MAX_ISR_DELAY_US / 1000)
  #define NV_NSECS_TO_JIFFIES(nsec)     ((nsec) * HZ / 1000000000)
---- a/conftest.sh	2024-05-02 19:55:33.000000000 +0530
-+++ b/conftest.sh	2026-05-22 09:09:42.343322164 +0530
+--- /tmp/nvidia-orig-copy/kernel/conftest.sh	2024-05-02 19:55:33.000000000 +0530
++++ /tmp/nvidia-test/kernel/conftest.sh	2026-05-22 09:55:41.887343045 +0530
 @@ -760,7 +760,25 @@
              # Seventh parameter added by commit 2263576cfc6e
              # ("ACPICA: Add post-order callback to acpi_walk_namespace")
@@ -230,7 +216,7 @@ Conftest auto-correction (no manual overrides needed on kernel 7.0):
              fi
          ;;
  
-@@ -5501,4 +5519,56 @@
+@@ -5501,4 +5519,60 @@
  
          exit 1
      ;;
@@ -254,7 +240,10 @@ Conftest auto-correction (no manual overrides needed on kernel 7.0):
 +        # LINUX_VERSION_CODE >= 7.0.0 = (7 << 16) | (0 << 8) | 0 = 458752
 +        if [ "$KVER" -ge 458752 ]; then
 +            # APIs that still exist but conftest wrongly #undefs (compile
-+            # tests fail due to static_assert in kernel headers)
++            # tests fail due to static_assert in kernel headers, or
++            # callback signature changes)
++            echo "#define NV_ACPI_WALK_NAMESPACE_PRESENT"
++            echo "#define NV_ACPI_WALK_NAMESPACE_ARGUMENT_COUNT 7"
 +            echo "#define NV_FILE_HAS_INODE"
 +            echo "#define NV_KUID_T_PRESENT"
 +            echo "#define NV_VM_FAULT_HAS_ADDRESS"
@@ -274,6 +263,7 @@ Conftest auto-correction (no manual overrides needed on kernel 7.0):
 +
 +            # APIs removed in 7.0 but conftest wrongly #defines (compile
 +            # tests produce false positives)
++            echo "#undef NV_PNV_NPU2_INIT_CONTEXT_PRESENT"
 +            echo "#undef NV_SET_CLOSE_ON_EXEC_PRESENT"
 +            echo "#undef NV_ACPI_BUS_GET_DEVICE_PRESENT"
 +            echo "#undef NV_PHYS_TO_DMA_PRESENT"
@@ -287,8 +277,8 @@ Conftest auto-correction (no manual overrides needed on kernel 7.0):
 +        exit 0
 +    ;;
  esac
---- a/nvidia/nv.c	2024-05-02 20:46:35.000000000 +0530
-+++ b/nvidia/nv.c	2026-05-22 09:06:10.267173821 +0530
+--- /tmp/nvidia-orig-copy/kernel/nvidia/nv.c	2024-05-02 20:46:35.000000000 +0530
++++ /tmp/nvidia-test/kernel/nvidia/nv.c	2026-05-22 09:55:22.854252884 +0530
 @@ -13,6 +13,12 @@
  #include "nv-linux.h"
  #include "nv-p2p.h"
@@ -302,8 +292,8 @@ Conftest auto-correction (no manual overrides needed on kernel 7.0):
  #include "nv-msi.h"
  #include "nv-pci-table.h"
  
---- a/nvidia/os-mlock.c	2024-05-02 20:46:35.000000000 +0530
-+++ b/nvidia/os-mlock.c	2026-05-22 09:06:10.267441511 +0530
+--- /tmp/nvidia-orig-copy/kernel/nvidia/os-mlock.c	2024-05-02 20:46:35.000000000 +0530
++++ /tmp/nvidia-test/kernel/nvidia/os-mlock.c	2026-05-22 09:55:22.854501584 +0530
 @@ -19,6 +19,38 @@
  {
  #if defined(NV_UNSAFE_FOLLOW_PFN_PRESENT)
@@ -343,8 +333,19 @@ Conftest auto-correction (no manual overrides needed on kernel 7.0):
  #else
      return follow_pfn(vma, address, pfn);
  #endif
---- a/nvidia-modeset/nvidia-modeset-linux.c	2024-05-02 20:20:44.000000000 +0530
-+++ b/nvidia-modeset/nvidia-modeset-linux.c	2026-05-22 09:06:10.267533431 +0530
+--- /tmp/nvidia-orig-copy/kernel/nvidia/nvidia.Kbuild	2024-05-02 20:46:35.000000000 +0530
++++ /tmp/nvidia-test/kernel/nvidia/nvidia.Kbuild	2026-05-22 09:56:01.987342733 +0530
+@@ -41,7 +41,7 @@
+ NVIDIA_BINARY_OBJECT_O := nvidia/nv-kernel.o
+ 
+ quiet_cmd_symlink = SYMLINK $@
+- cmd_symlink = ln -sf $< $@
++ cmd_symlink = ln -sf $(notdir $<) $@
+ 
+ targets += $(NVIDIA_BINARY_OBJECT_O)
+ 
+--- /tmp/nvidia-orig-copy/kernel/nvidia-modeset/nvidia-modeset-linux.c	2024-05-02 20:20:44.000000000 +0530
++++ /tmp/nvidia-test/kernel/nvidia-modeset/nvidia-modeset-linux.c	2026-05-22 09:55:22.854597114 +0530
 @@ -45,6 +45,12 @@
  #include <linux/sched/signal.h>
  #endif
@@ -358,8 +359,19 @@ Conftest auto-correction (no manual overrides needed on kernel 7.0):
  /*
   * Commit aefb2f2e619b ("x86/bugs: Rename CONFIG_RETPOLINE =>
   * CONFIG_MITIGATION_RETPOLINE) in v6.8 renamed CONFIG_RETPOLINE.
---- a/nvidia-uvm/uvm_linux.h	2024-05-02 20:46:36.000000000 +0530
-+++ b/nvidia-uvm/uvm_linux.h	2026-05-22 09:06:10.267650331 +0530
+--- /tmp/nvidia-orig-copy/kernel/nvidia-modeset/nvidia-modeset.Kbuild	2024-05-02 19:58:12.000000000 +0530
++++ /tmp/nvidia-test/kernel/nvidia-modeset/nvidia-modeset.Kbuild	2026-05-22 09:55:52.469342881 +0530
+@@ -41,7 +41,7 @@
+ NVIDIA_MODESET_BINARY_OBJECT_O := nvidia-modeset/nv-modeset-kernel.o
+ 
+ quiet_cmd_symlink = SYMLINK $@
+-cmd_symlink = ln -sf $< $@
++cmd_symlink = ln -sf $(notdir $<) $@
+ 
+ targets += $(NVIDIA_MODESET_BINARY_OBJECT_O)
+ 
+--- /tmp/nvidia-orig-copy/kernel/nvidia-uvm/uvm_linux.h	2024-05-02 20:46:36.000000000 +0530
++++ /tmp/nvidia-test/kernel/nvidia-uvm/uvm_linux.h	2026-05-22 09:55:22.854723584 +0530
 @@ -485,6 +485,8 @@
  #endif
  
